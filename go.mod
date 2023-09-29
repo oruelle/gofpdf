@@ -1,3 +1,3 @@
-module gitub.com/oruelle/gofpdf
+module github.com/oruelle/gofpdf
 
 go 1.18

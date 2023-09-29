@@ -60,11 +60,11 @@ Installation
 
 To install the package on your system, run
 
-    go get github.com/phpdave11/gofpdf
+    go get github.com/oruelle/gofpdf
 
 Later, to receive updates, run
 
-    go get -u -v github.com/phpdave11/gofpdf/...
+    go get -u -v github.com/oruelle/gofpdf/...
 
 
 Quick Start

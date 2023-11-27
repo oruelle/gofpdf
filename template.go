@@ -23,12 +23,12 @@ import (
 )
 
 // CreateTemplate defines a new template using the current page size.
-func (f *Fpdf) CreateTemplate(fn func(*Tpl)) Template {
+func (f *Fpdf) CreateTemplate(fn func(*Tpl)) (Template, error) {
 	return newTpl(PointType{0, 0}, f.curPageSize, f.defOrientation, f.unitStr, f.fontDirStr, fn, f)
 }
 
 // CreateTemplateCustom starts a template, using the given bounds.
-func (f *Fpdf) CreateTemplateCustom(corner PointType, size SizeType, fn func(*Tpl)) Template {
+func (f *Fpdf) CreateTemplateCustom(corner PointType, size SizeType, fn func(*Tpl)) (Template, error) {
 	return newTpl(corner, size, f.defOrientation, f.unitStr, f.fontDirStr, fn, f)
 }
 
@@ -39,7 +39,7 @@ func (f *Fpdf) CreateTemplateCustom(corner PointType, size SizeType, fn func(*Tp
 // landscape mode. This causes problems when placing the template in a master
 // document where this condition does not apply. CreateTpl() is a similar
 // function that lets you specify the orientation to avoid this problem.
-func CreateTemplate(corner PointType, size SizeType, unitStr, fontDirStr string, fn func(*Tpl)) Template {
+func CreateTemplate(corner PointType, size SizeType, unitStr, fontDirStr string, fn func(*Tpl)) (Template, error) {
 	orientationStr := "p"
 	if size.Wd > size.Ht {
 		orientationStr = "l"
@@ -49,7 +49,7 @@ func CreateTemplate(corner PointType, size SizeType, unitStr, fontDirStr string,
 }
 
 // CreateTpl creates a template not attached to any document
-func CreateTpl(corner PointType, size SizeType, orientationStr, unitStr, fontDirStr string, fn func(*Tpl)) Template {
+func CreateTpl(corner PointType, size SizeType, orientationStr, unitStr, fontDirStr string, fn func(*Tpl)) (Template, error) {
 	return newTpl(corner, size, orientationStr, unitStr, fontDirStr, fn, nil)
 }
 

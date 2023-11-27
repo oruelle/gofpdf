@@ -3,8 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/phpdave11/gofpdf"
 	"os"
+
+	"github.com/oruelle/gofpdf"
 )
 
 func errPrintf(fmtStr string, args ...interface{}) {

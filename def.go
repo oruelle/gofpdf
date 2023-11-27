@@ -334,7 +334,7 @@ type Pdf interface {
 	ClearError()
 	ClipCircle(x, y, r float64, outline bool)
 	ClipEllipse(x, y, rx, ry float64, outline bool)
-	ClipEnd()
+	ClipEnd() error
 	ClipPolygon(points []PointType, outline bool)
 	ClipRect(x, y, w, h float64, outline bool)
 	ClipRoundedRect(x, y, w, h, r float64, outline bool)
@@ -602,6 +602,11 @@ type Fpdf struct {
 	}
 	spotColorMap           map[string]spotColorType // Map of named ink-based colors
 	userUnderlineThickness float64                  // A custom user underline thickness multiplier.
+	workingWidth           float64
+	workingHeight          float64
+	workingLeft            float64
+	workingCenter          float64
+	workingRight           float64
 }
 
 type encType struct {

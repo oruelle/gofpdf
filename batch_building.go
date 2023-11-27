@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 Kurt Jung (Gmail: kurt.w.jung)
+ * Copyright (c) 2023-2025 Olivier Ruelle (github.com/oruelle)
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,18 +14,30 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-package example_test
+package gofpdf
 
-import (
-	"errors"
+type BatchInterface interface {
+	Insert() error
+}
 
-	"github.com/oruelle/gofpdf/internal/example"
-)
+type BatchParag struct {
+	BatchInterface
+	text       string  // text to insert
+	x          float64 // y position to insert element
+	y          float64 // y position to insert element
+	width      float64 // width of paragraph
+	lheight    float64 // line height
+	fontFamily string
+	fontStyle  string
+	fontSizePt int    // font size in points
+	fontColor  Color  // font color
+	align      string // alignement to set
+}
 
-// ExampleFilename tests the Filename() and Summary() functions.
-func ExampleFilename() {
-	fileStr := example.Filename("example")
-	example.Summary(errors.New("printer on fire"), fileStr)
-	// Output:
-	// printer on fire
+func (p *BatchParag) Insert(fp *Fpdf) error {
+	fp.ParagXY(p.x, p.y, p.width, p.lheight, p.text, p.align)
+	if fp.Error() != nil {
+		return fp.Error()
+	}
+	return nil
 }

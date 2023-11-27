@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2013-2014 Kurt Jung (Gmail: kurt.w.jung)
+ * Copyright (c) 2023-2024 Olivier Ruelle (github.com/oruelle)
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -33,6 +34,7 @@ import (
 	"image/png"
 	"io"
 	"io/ioutil"
+	"log"
 	"math"
 	"os"
 	"path"
@@ -57,7 +59,7 @@ func (b *fmtBuffer) printf(fmtStr string, args ...interface{}) {
 	b.Buffer.WriteString(fmt.Sprintf(fmtStr, args...))
 }
 
-func fpdfNew(orientationStr, unitStr, sizeStr, fontDirStr string, size SizeType) (f *Fpdf) {
+func fpdfNew(orientationStr, unitStr, sizeStr, fontDirStr string, size SizeType) (f *Fpdf, err error) {
 	f = new(Fpdf)
 	if orientationStr == "" {
 		orientationStr = "p"
@@ -101,14 +103,15 @@ func fpdfNew(orientationStr, unitStr, sizeStr, fontDirStr string, size SizeType)
 	f.inHeader = false
 	f.inFooter = false
 	f.lasth = 0
-	f.fontFamily = ""
+	// Set default font, prevent some issues
+	f.fontFamily = "helvetica"
 	f.fontStyle = ""
 	f.SetFontSize(12)
 	f.underline = false
 	f.strikeout = false
-	f.setDrawColor(0, 0, 0)
-	f.setFillColor(0, 0, 0)
-	f.setTextColor(0, 0, 0)
+	f.SetDrawColor(0, 0, 0)
+	f.SetFillColor(0, 0, 0)
+	f.SetTextColor(0, 0, 0)
 	f.colorFlag = false
 	f.ws = 0
 	f.fontpath = fontDirStr
@@ -131,7 +134,8 @@ func fpdfNew(orientationStr, unitStr, sizeStr, fontDirStr string, size SizeType)
 	case "in", "inch":
 		f.k = 72.0
 	default:
-		f.err = fmt.Errorf("incorrect unit %s", unitStr)
+		err = fmt.Errorf("incorrect unit %s", unitStr)
+		f.err = err
 		return
 	}
 	f.unitStr = unitStr
@@ -149,12 +153,16 @@ func fpdfNew(orientationStr, unitStr, sizeStr, fontDirStr string, size SizeType)
 	if size.Wd > 0 && size.Ht > 0 {
 		f.defPageSize = size
 	} else {
-		f.defPageSize = f.getpagesizestr(sizeStr)
-		if f.err != nil {
+		f.defPageSize, err = f.getpagesizestr(sizeStr)
+		if err != nil {
+			f.err = err
 			return
 		}
 	}
 	f.curPageSize = f.defPageSize
+
+	f.AliasNbPages("") // set default page number alias to {nb}
+
 	// Page orientation
 	switch orientationStr {
 	case "p", "portrait":
@@ -167,29 +175,41 @@ func fpdfNew(orientationStr, unitStr, sizeStr, fontDirStr string, size SizeType)
 		f.w = f.defPageSize.Ht
 		f.h = f.defPageSize.Wd
 	default:
-		f.err = fmt.Errorf("incorrect orientation: %s", orientationStr)
+		err = fmt.Errorf("incorrect orientation: %s", orientationStr)
+		f.err = err
 		return
 	}
 	f.curOrientation = f.defOrientation
+
 	f.wPt = f.w * f.k
 	f.hPt = f.h * f.k
+
 	// Page margins (1 cm)
 	margin := 28.35 / f.k
 	f.SetMargins(margin, margin, margin)
+
 	// Interior cell margin (1 mm)
 	f.cMargin = margin / 10
+
 	// Line width (0.2 mm)
 	f.lineWidth = 0.567 / f.k
+
 	// 	Automatic page break
 	f.SetAutoPageBreak(true, 2*margin)
+
+	// Update working size
+	f.updateWorkingSize()
+
 	// Default display mode
-	f.SetDisplayMode("default", "default")
-	if f.err != nil {
+	err = f.SetDisplayMode("default", "default")
+	if err != nil {
+		f.err = err
 		return
 	}
 	f.acceptPageBreak = func() bool {
 		return f.autoPageBreak
 	}
+
 	// Enable compression
 	f.SetCompression(!gl.noCompress)
 	f.spotColorMap = make(map[string]spotColorType)
@@ -200,6 +220,7 @@ func fpdfNew(orientationStr, unitStr, sizeStr, fontDirStr string, size SizeType)
 	f.alpha = 1
 	f.gradientList = make([]gradientType, 0, 8)
 	f.gradientList = append(f.gradientList, gradientType{}) // gradientList[0] is unused
+
 	// Set default PDF version number
 	f.pdfVersion = "1.3"
 	f.SetProducer("FPDF "+cnFpdfVersion, true)
@@ -208,6 +229,7 @@ func fpdfNew(orientationStr, unitStr, sizeStr, fontDirStr string, size SizeType)
 	f.creationDate = gl.creationDate
 	f.modDate = gl.modDate
 	f.userUnderlineThickness = 1
+
 	return
 }
 
@@ -215,7 +237,7 @@ func fpdfNew(orientationStr, unitStr, sizeStr, fontDirStr string, size SizeType)
 // subsequently called to produce a single PDF document. NewCustom() is an
 // alternative to New() that provides additional customization. The PageSize()
 // example demonstrates this method.
-func NewCustom(init *InitType) (f *Fpdf) {
+func NewCustom(init *InitType) (f *Fpdf, err error) {
 	return fpdfNew(init.OrientationStr, init.UnitStr, init.SizeStr, init.FontDirStr, init.Size)
 }
 
@@ -239,7 +261,7 @@ func NewCustom(init *InitType) (f *Fpdf) {
 // reference an actual directory if a font other than one of the core
 // fonts is used. The core fonts are "courier", "helvetica" (also called
 // "arial"), "times", and "zapfdingbats" (also called "symbol").
-func New(orientationStr, unitStr, sizeStr, fontDirStr string) (f *Fpdf) {
+func New(orientationStr, unitStr, sizeStr, fontDirStr string) (f *Fpdf, err error) {
 	return fpdfNew(orientationStr, unitStr, sizeStr, fontDirStr, SizeType{0, 0})
 }
 
@@ -301,6 +323,10 @@ func (f *Fpdf) GetPageSize() (width, height float64) {
 	return
 }
 
+func (f *Fpdf) GetWorkingSize() (width, height float64) {
+	return f.workingWidth, f.workingHeight
+}
+
 // GetMargins returns the left, top, right, and bottom margins. The first three
 // are set with the SetMargins() method. The bottom margin is set with the
 // SetAutoPageBreak() method.
@@ -322,6 +348,16 @@ func (f *Fpdf) SetMargins(left, top, right float64) {
 		right = left
 	}
 	f.rMargin = right
+	f.updateWorkingSize()
+}
+
+func (f *Fpdf) updateWorkingSize() {
+	w, h := f.GetPageSize()
+	f.workingWidth = w - f.lMargin - f.rMargin
+	f.workingHeight = h - f.tMargin - f.bMargin
+	f.workingLeft = f.lMargin
+	f.workingCenter = w / 2
+	f.workingRight = w - f.rMargin
 }
 
 // SetLeftMargin defines the left margin. The method can be called before
@@ -332,6 +368,7 @@ func (f *Fpdf) SetLeftMargin(margin float64) {
 	if f.page > 0 && f.x < margin {
 		f.x = margin
 	}
+	f.updateWorkingSize()
 }
 
 // GetCellMargin returns the cell margin. This is the amount of space before
@@ -352,7 +389,7 @@ func (f *Fpdf) SetCellMargin(margin float64) {
 // pages. Allowable types are trim, trimbox, crop, cropbox, bleed, bleedbox,
 // art and artbox box types are case insensitive. See SetPageBox() for a method
 // that specifies the coordinates and extent of the page box individually.
-func (f *Fpdf) SetPageBoxRec(t string, pb PageBox) {
+func (f *Fpdf) SetPageBoxRec(t string, pb PageBox) (err error) {
 	switch strings.ToLower(t) {
 	case "trim":
 		fallthrough
@@ -371,7 +408,8 @@ func (f *Fpdf) SetPageBoxRec(t string, pb PageBox) {
 	case "artbox":
 		t = "ArtBox"
 	default:
-		f.err = fmt.Errorf("%s is not a valid page box type", t)
+		err = fmt.Errorf("%s is not a valid page box type", t)
+		f.err = err
 		return
 	}
 
@@ -386,21 +424,26 @@ func (f *Fpdf) SetPageBoxRec(t string, pb PageBox) {
 
 	// always override. page defaults are supplied in addPage function
 	f.defPageBoxes[t] = pb
+
+	return
 }
 
 // SetPageBox sets the page box for the current page, and any following pages.
 // Allowable types are trim, trimbox, crop, cropbox, bleed, bleedbox, art and
 // artbox box types are case insensitive.
-func (f *Fpdf) SetPageBox(t string, x, y, wd, ht float64) {
-	f.SetPageBoxRec(t, PageBox{SizeType{Wd: wd, Ht: ht}, PointType{X: x, Y: y}})
+func (f *Fpdf) SetPageBox(t string, x, y, wd, ht float64) (err error) {
+	return f.SetPageBoxRec(t, PageBox{SizeType{Wd: wd, Ht: ht}, PointType{X: x, Y: y}})
 }
 
 // SetPage sets the current page to that of a valid page in the PDF document.
 // pageNum is one-based. The SetPage() example demonstrates this method.
-func (f *Fpdf) SetPage(pageNum int) {
+func (f *Fpdf) SetPage(pageNum int) (err error) {
 	if (pageNum > 0) && (pageNum < len(f.pages)) {
 		f.page = pageNum
+	} else {
+		err = fmt.Errorf("Page num <0 or exceed number of pages")
 	}
+	return
 }
 
 // PageCount returns the number of pages currently in the document. Since page
@@ -481,12 +524,14 @@ func (f *Fpdf) SetFooterFuncLpi(fnc func(lastPage bool)) {
 // creating the first page.
 func (f *Fpdf) SetTopMargin(margin float64) {
 	f.tMargin = margin
+	f.updateWorkingSize()
 }
 
 // SetRightMargin defines the right margin. The method can be called before
 // creating the first page.
 func (f *Fpdf) SetRightMargin(margin float64) {
 	f.rMargin = margin
+	f.updateWorkingSize()
 }
 
 // GetAutoPageBreak returns true if automatic pages breaks are enabled, false
@@ -506,6 +551,7 @@ func (f *Fpdf) SetAutoPageBreak(auto bool, margin float64) {
 	f.autoPageBreak = auto
 	f.bMargin = margin
 	f.pageBreakTrigger = f.h - margin
+	f.updateWorkingSize()
 }
 
 // SetDisplayMode sets advisory display directives for the document viewer.
@@ -527,10 +573,8 @@ func (f *Fpdf) SetAutoPageBreak(auto bool, margin float64) {
 // time with odd-numbered pages on the left, or "TwoPageRight" to display pages
 // two at a time with odd-numbered pages on the right, or "default" to use
 // viewer default mode.
-func (f *Fpdf) SetDisplayMode(zoomStr, layoutStr string) {
-	if f.err != nil {
-		return
-	}
+func (f *Fpdf) SetDisplayMode(zoomStr, layoutStr string) (err error) {
+
 	if layoutStr == "" {
 		layoutStr = "default"
 	}
@@ -538,7 +582,8 @@ func (f *Fpdf) SetDisplayMode(zoomStr, layoutStr string) {
 	case "fullpage", "fullwidth", "real", "default":
 		f.zoomMode = zoomStr
 	default:
-		f.err = fmt.Errorf("incorrect zoom display mode: %s", zoomStr)
+		err = fmt.Errorf("incorrect zoom display mode: %s", zoomStr)
+		f.err = err
 		return
 	}
 	switch layoutStr {
@@ -546,9 +591,12 @@ func (f *Fpdf) SetDisplayMode(zoomStr, layoutStr string) {
 		"TwoColumnLeft", "TwoColumnRight", "TwoPageLeft", "TwoPageRight":
 		f.layoutMode = layoutStr
 	default:
-		f.err = fmt.Errorf("incorrect layout display mode: %s", layoutStr)
+		err = fmt.Errorf("incorrect layout display mode: %s", layoutStr)
+		f.err = err
 		return
 	}
+
+	return
 }
 
 // SetDefaultCompression controls the default setting of the internal
@@ -657,23 +705,22 @@ func (f *Fpdf) open() {
 // explicitly because Output(), OutputAndClose() and OutputFileAndClose() do it
 // automatically. If the document contains no page, AddPage() is called to
 // prevent the generation of an invalid document.
-func (f *Fpdf) Close() {
-	if f.err == nil {
-		if f.clipNest > 0 {
-			f.err = fmt.Errorf("clip procedure must be explicitly ended")
-		} else if f.transformNest > 0 {
-			f.err = fmt.Errorf("transformation procedure must be explicitly ended")
-		}
-	}
-	if f.err != nil {
+func (f *Fpdf) Close() (err error) {
+	// Check Clip and Transform
+	if f.clipNest > 0 {
+		err = fmt.Errorf("clip procedure must be explicitly ended")
+		return
+	} else if f.transformNest > 0 {
+		err = fmt.Errorf("transformation procedure must be explicitly ended")
 		return
 	}
+
 	if f.state == 3 {
 		return
 	}
 	if f.page == 0 {
-		f.AddPage()
-		if f.err != nil {
+		err = f.AddPage()
+		if err != nil {
 			return
 		}
 	}
@@ -690,6 +737,7 @@ func (f *Fpdf) Close() {
 	f.endpage()
 	// Close document
 	f.enddoc()
+
 	return
 }
 
@@ -716,10 +764,7 @@ func (f *Fpdf) PageSize(pageNum int) (wd, ht float64, unitStr string) {
 // size specifies the size of the new page in the units established in New().
 //
 // The PageSize() example demonstrates this method.
-func (f *Fpdf) AddPageFormat(orientationStr string, size SizeType) {
-	if f.err != nil {
-		return
-	}
+func (f *Fpdf) AddPageFormat(orientationStr string, size SizeType) (err error) {
 	if f.page != len(f.pages)-1 {
 		f.page = len(f.pages) - 1
 	}
@@ -756,25 +801,30 @@ func (f *Fpdf) AddPageFormat(orientationStr string, size SizeType) {
 	}
 	// Start new page
 	f.beginpage(orientationStr, size)
+
 	// 	Set line cap style to current value
 	// f.out("2 J")
 	f.outf("%d J", f.capStyle)
+
 	// 	Set line join style to current value
 	f.outf("%d j", f.joinStyle)
+
 	// Set line width
 	f.lineWidth = lw
 	f.outf("%.2f w", lw*f.k)
+
 	// Set dash pattern
 	if len(f.dashArray) > 0 {
 		f.outputDashPattern()
 	}
 	// 	Set font
 	if familyStr != "" {
-		f.SetFont(familyStr, style, fontsize)
-		if f.err != nil {
+		err = f.SetFont(familyStr, style, fontsize)
+		if err != nil {
 			return
 		}
 	}
+
 	// 	Set colors
 	f.color.draw = dc
 	if dc.str != "0 G" {
@@ -786,6 +836,7 @@ func (f *Fpdf) AddPageFormat(orientationStr string, size SizeType) {
 	}
 	f.color.text = tc
 	f.colorFlag = cf
+
 	// 	Page header
 	if f.headerFnc != nil {
 		f.inHeader = true
@@ -795,15 +846,17 @@ func (f *Fpdf) AddPageFormat(orientationStr string, size SizeType) {
 			f.SetHomeXY()
 		}
 	}
+
 	// 	Restore line width
 	if f.lineWidth != lw {
 		f.lineWidth = lw
 		f.outf("%.2f w", lw*f.k)
 	}
+
 	// Restore font
 	if familyStr != "" {
-		f.SetFont(familyStr, style, fontsize)
-		if f.err != nil {
+		err = f.SetFont(familyStr, style, fontsize)
+		if err != nil {
 			return
 		}
 	}
@@ -818,6 +871,7 @@ func (f *Fpdf) AddPageFormat(orientationStr string, size SizeType) {
 	}
 	f.color.text = tc
 	f.colorFlag = cf
+
 	return
 }
 
@@ -835,12 +889,9 @@ func (f *Fpdf) AddPageFormat(orientationStr string, size SizeType) {
 //
 // See AddPageFormat() for a version of this method that allows the page size
 // and orientation to be different than the default.
-func (f *Fpdf) AddPage() {
-	if f.err != nil {
-		return
-	}
+func (f *Fpdf) AddPage() (err error) {
 	// dbg("AddPage")
-	f.AddPageFormat(f.defOrientation, f.defPageSize)
+	err = f.AddPageFormat(f.defOrientation, f.defPageSize)
 	return
 }
 
@@ -883,10 +934,6 @@ func rgbColorValue(r, g, b int, grayStr, fullStr string) (clr colorType) {
 // The method can be called before the first page is created. The value is
 // retained from page to page.
 func (f *Fpdf) SetDrawColor(r, g, b int) {
-	f.setDrawColor(r, g, b)
-}
-
-func (f *Fpdf) setDrawColor(r, g, b int) {
 	f.color.draw = rgbColorValue(r, g, b, "G", "RG")
 	if f.page > 0 {
 		f.out(f.color.draw.str)
@@ -905,10 +952,6 @@ func (f *Fpdf) GetDrawColor() (int, int, int) {
 // -255). The method can be called before the first page is created and the
 // value is retained from page to page.
 func (f *Fpdf) SetFillColor(r, g, b int) {
-	f.setFillColor(r, g, b)
-}
-
-func (f *Fpdf) setFillColor(r, g, b int) {
 	f.color.fill = rgbColorValue(r, g, b, "g", "rg")
 	f.colorFlag = f.color.fill.str != f.color.text.str
 	if f.page > 0 {
@@ -927,10 +970,6 @@ func (f *Fpdf) GetFillColor() (int, int, int) {
 // components (0 - 255). The method can be called before the first page is
 // created. The value is retained from page to page.
 func (f *Fpdf) SetTextColor(r, g, b int) {
-	f.setTextColor(r, g, b)
-}
-
-func (f *Fpdf) setTextColor(r, g, b int) {
 	f.color.text = rgbColorValue(r, g, b, "g", "rg")
 	f.colorFlag = f.color.fill.str != f.color.text.str
 }
@@ -978,7 +1017,11 @@ func (f *Fpdf) GetStringSymbolWidth(s string) int {
 			if ch == 0 {
 				break
 			}
-			w += f.currentFont.Cw[ch]
+			if int(ch) < len(f.currentFont.Cw) {
+				w += f.currentFont.Cw[ch]
+			} else {
+				log.Println("Invalid character range : check if Font is set")
+			}
 		}
 	}
 	return w
@@ -1341,9 +1384,9 @@ func (f *Fpdf) GetAlpha() (alpha float64, blendModeStr string) {
 //
 // To reset normal rendering after applying a blending mode, call this method
 // with alpha set to 1.0 and blendModeStr set to "Normal".
-func (f *Fpdf) SetAlpha(alpha float64, blendModeStr string) {
+func (f *Fpdf) SetAlpha(alpha float64, blendModeStr string) error {
 	if f.err != nil {
-		return
+		return f.err
 	}
 	var bl blendModeType
 	switch blendModeStr {
@@ -1355,11 +1398,11 @@ func (f *Fpdf) SetAlpha(alpha float64, blendModeStr string) {
 		bl.modeStr = "Normal"
 	default:
 		f.err = fmt.Errorf("unrecognized blend mode \"%s\"", blendModeStr)
-		return
+		return f.err
 	}
 	if alpha < 0.0 || alpha > 1.0 {
 		f.err = fmt.Errorf("alpha value (0.0 - 1.0) is out of range: %.3f", alpha)
-		return
+		return f.err
 	}
 	f.alpha = alpha
 	f.blendMode = blendModeStr
@@ -1372,6 +1415,8 @@ func (f *Fpdf) SetAlpha(alpha float64, blendModeStr string) {
 		f.blendMap[keyStr] = pos
 	}
 	f.outf("/GS%d gs", pos)
+
+	return nil
 }
 
 func (f *Fpdf) gradientClipStart(x, y, w, h float64) {
@@ -1609,15 +1654,19 @@ func (f *Fpdf) ClipPolygon(points []PointType, outline bool) {
 // successfully output while a clipping operation is active.
 //
 // The ClipText() example demonstrates this method.
-func (f *Fpdf) ClipEnd() {
+func (f *Fpdf) ClipEnd() (err error) {
 	if f.err == nil {
-		if f.clipNest > 0 {
-			f.clipNest--
-			f.out("Q")
-		} else {
-			f.err = fmt.Errorf("error attempting to end clip operation out of sequence")
-		}
+		return f.err
 	}
+	if f.clipNest > 0 {
+		f.clipNest--
+		f.out("Q")
+	} else {
+		f.err = fmt.Errorf("error attempting to end clip operation out of sequence")
+		return f.err
+	}
+
+	return nil
 }
 
 // AddFont imports a TrueType, OpenType or Type1 font and makes it available.
@@ -1668,7 +1717,7 @@ func (f *Fpdf) AddUTF8Font(familyStr, styleStr, fileStr string) {
 	f.addFont(fontFamilyEscape(familyStr), styleStr, fileStr, true)
 }
 
-func (f *Fpdf) addFont(familyStr, styleStr, fileStr string, isUTF8 bool) {
+func (f *Fpdf) addFont(familyStr, styleStr, fileStr string, isUTF8 bool) (err error) {
 	if fileStr == "" {
 		if isUTF8 {
 			fileStr = strings.Replace(familyStr, " ", "", -1) + strings.ToLower(styleStr) + ".ttf"
@@ -1683,7 +1732,7 @@ func (f *Fpdf) addFont(familyStr, styleStr, fileStr string, isUTF8 bool) {
 			return
 		}
 		var ttfStat os.FileInfo
-		var err error
+
 		fileStr = path.Join(f.fontpath, fileStr)
 		ttfStat, err = os.Stat(fileStr)
 		if err != nil {
@@ -1751,7 +1800,9 @@ func (f *Fpdf) addFont(familyStr, styleStr, fileStr string, isUTF8 bool) {
 				if closer, ok := reader.(io.Closer); ok {
 					closer.Close()
 				}
-				return
+				return nil
+			} else {
+				return err
 			}
 		}
 
@@ -1759,12 +1810,14 @@ func (f *Fpdf) addFont(familyStr, styleStr, fileStr string, isUTF8 bool) {
 		file, err := os.Open(fileStr)
 		if err != nil {
 			f.err = err
-			return
+			return err
 		}
 		defer file.Close()
 
 		f.AddFontFromReader(familyStr, styleStr, file)
 	}
+
+	return
 }
 
 func makeSubsetRange(end int) map[int]int {
@@ -1813,9 +1866,9 @@ func (f *Fpdf) AddUTF8FontFromBytes(familyStr, styleStr string, utf8Bytes []byte
 	f.addFontFromBytes(fontFamilyEscape(familyStr), styleStr, nil, nil, utf8Bytes)
 }
 
-func (f *Fpdf) addFontFromBytes(familyStr, styleStr string, jsonFileBytes, zFileBytes, utf8Bytes []byte) {
+func (f *Fpdf) addFontFromBytes(familyStr, styleStr string, jsonFileBytes, zFileBytes, utf8Bytes []byte) (err error) {
 	if f.err != nil {
-		return
+		return f.err
 	}
 
 	// load font key
@@ -1838,7 +1891,7 @@ func (f *Fpdf) addFontFromBytes(familyStr, styleStr string, jsonFileBytes, zFile
 
 		utf8File := newUTF8Font(&reader)
 
-		err := utf8File.parseFile()
+		err = utf8File.parseFile()
 		if err != nil {
 			fmt.Printf("get metrics Error: %e\n", err)
 			return
@@ -1875,13 +1928,10 @@ func (f *Fpdf) addFontFromBytes(familyStr, styleStr string, jsonFileBytes, zFile
 	} else {
 		// load font definitions
 		var info fontDefType
-		err := json.Unmarshal(jsonFileBytes, &info)
+		err = json.Unmarshal(jsonFileBytes, &info)
 
 		if err != nil {
 			f.err = err
-		}
-
-		if f.err != nil {
 			return
 		}
 
@@ -1929,6 +1979,8 @@ func (f *Fpdf) addFontFromBytes(familyStr, styleStr string, jsonFileBytes, zFile
 
 		f.fonts[fontkey] = info
 	}
+
+	return
 }
 
 // getFontKey is used by AddFontFromReader and GetFontDesc
@@ -1944,9 +1996,9 @@ func getFontKey(familyStr, styleStr string) string {
 // AddFontFromReader imports a TrueType, OpenType or Type1 font and makes it
 // available using a reader that satisifies the io.Reader interface. See
 // AddFont for details about familyStr and styleStr.
-func (f *Fpdf) AddFontFromReader(familyStr, styleStr string, r io.Reader) {
+func (f *Fpdf) AddFontFromReader(familyStr, styleStr string, r io.Reader) (err error) {
 	if f.err != nil {
-		return
+		return f.err
 	}
 	// dbg("Adding family [%s], style [%s]", familyStr, styleStr)
 	familyStr = fontFamilyEscape(familyStr)
@@ -1959,7 +2011,7 @@ func (f *Fpdf) AddFontFromReader(familyStr, styleStr string, r io.Reader) {
 	var info fontDefType
 	info = f.loadfont(r)
 	if f.err != nil {
-		return
+		return f.err
 	}
 	if len(info.Diff) > 0 {
 		// Search existing encodings
@@ -1986,6 +2038,7 @@ func (f *Fpdf) AddFontFromReader(familyStr, styleStr string, r io.Reader) {
 		}
 	}
 	f.fonts[fontkey] = info
+
 	return
 }
 
@@ -2028,11 +2081,11 @@ func (f *Fpdf) GetFontDesc(familyStr, styleStr string) FontDescType {
 // size is the font size measured in points. The default value is the current
 // size. If no size has been specified since the beginning of the document, the
 // value taken is 12.
-func (f *Fpdf) SetFont(familyStr, styleStr string, size float64) {
+func (f *Fpdf) SetFont(familyStr, styleStr string, size float64) (err error) {
 	// dbg("SetFont x %.2f, lMargin %.2f", f.x, f.lMargin)
 
 	if f.err != nil {
-		return
+		return f.err
 	}
 	// dbg("SetFont")
 	familyStr = fontFamilyEscape(familyStr)
@@ -2066,27 +2119,28 @@ func (f *Fpdf) SetFont(familyStr, styleStr string, size float64) {
 		if familyStr == "arial" {
 			familyStr = "helvetica"
 		}
+		if familyStr == "symbol" {
+			familyStr = "zapfdingbats"
+		}
+		if familyStr == "zapfdingbats" {
+			styleStr = ""
+		}
 		_, ok = f.coreFonts[familyStr]
 		if ok {
-			if familyStr == "symbol" {
-				familyStr = "zapfdingbats"
-			}
-			if familyStr == "zapfdingbats" {
-				styleStr = ""
-			}
 			fontKey = familyStr + styleStr
 			_, ok = f.fonts[fontKey]
 			if !ok {
-				rdr := f.coreFontReader(familyStr, styleStr)
-				if f.err == nil {
-					f.AddFontFromReader(familyStr, styleStr, rdr)
+				rdr, err := f.coreFontReader(familyStr, styleStr)
+				if err != nil {
+					return err
 				}
-				if f.err != nil {
-					return
+				err = f.AddFontFromReader(familyStr, styleStr, rdr)
+				if err != nil {
+					return err
 				}
 			}
 		} else {
-			f.err = fmt.Errorf("undefined font: %s %s", familyStr, styleStr)
+			err = fmt.Errorf("undefined font: %s %s", familyStr, styleStr)
 			return
 		}
 	}
@@ -2104,7 +2158,13 @@ func (f *Fpdf) SetFont(familyStr, styleStr string, size float64) {
 	if f.page > 0 {
 		f.outf("BT /F%s %.2f Tf ET", f.currentFont.i, f.fontSizePt)
 	}
+
 	return
+}
+
+// GetFont returns the current font family, style and size (unit size)
+func (f *Fpdf) GetFont() (family string, style string, size float64) {
+	return f.fontFamily, f.fontStyle, f.fontSize
 }
 
 // SetFontStyle sets the style of the current font. See also SetFont()
@@ -2310,15 +2370,15 @@ func (f *Fpdf) SetAcceptPageBreakFunc(fnc func() bool) {
 // linkStr is a target URL or empty for no external link. A non--zero value for
 // link takes precedence over linkStr.
 func (f *Fpdf) CellFormat(w, h float64, txtStr, borderStr string, ln int,
-	alignStr string, fill bool, link int, linkStr string) {
+	alignStr string, fill bool, link int, linkStr string) (err error) {
 	// dbg("CellFormat. h = %.2f, borderStr = %s", h, borderStr)
 	if f.err != nil {
-		return
+		return f.err
 	}
 
 	if f.currentFont.Name == "" {
 		f.err = fmt.Errorf("font has not been set; unable to render text")
-		return
+		return f.err
 	}
 
 	borderStr = strings.ToUpper(borderStr)
@@ -2334,7 +2394,7 @@ func (f *Fpdf) CellFormat(w, h float64, txtStr, borderStr string, ln int,
 		}
 		f.AddPageFormat(f.curOrientation, f.curPageSize)
 		if f.err != nil {
-			return
+			return f.err
 		}
 		f.x = x
 		if ws > 0 {
@@ -2491,6 +2551,7 @@ func (f *Fpdf) CellFormat(w, h float64, txtStr, borderStr string, ln int,
 	} else {
 		f.x += w
 	}
+
 	return
 }
 
@@ -2507,15 +2568,15 @@ func reverseText(text string) string {
 
 // Cell is a simpler version of CellFormat with no fill, border, links or
 // special alignment. The Cell_strikeout() example demonstrates this method.
-func (f *Fpdf) Cell(w, h float64, txtStr string) {
-	f.CellFormat(w, h, txtStr, "", 0, "L", false, 0, "")
+func (f *Fpdf) Cell(w, h float64, txtStr string) (err error) {
+	return f.CellFormat(w, h, txtStr, "", 0, "L", false, 0, "")
 }
 
 // Cellf is a simpler printf-style version of CellFormat with no fill, border,
 // links or special alignment. See documentation for the fmt package for
 // details on fmtStr and args.
-func (f *Fpdf) Cellf(w, h float64, fmtStr string, args ...interface{}) {
-	f.CellFormat(w, h, sprintf(fmtStr, args...), "", 0, "L", false, 0, "")
+func (f *Fpdf) Cellf(w, h float64, fmtStr string, args ...interface{}) (err error) {
+	return f.CellFormat(w, h, sprintf(fmtStr, args...), "", 0, "L", false, 0, "")
 }
 
 // SplitLines splits text into several lines using the current font. Each line
@@ -2595,9 +2656,9 @@ func (f *Fpdf) SplitLines(txt []byte, w float64) [][]byte {
 // applications that use UTF-8 fonts and depend on having all trailing newlines
 // removed should call strings.TrimRight(txtStr, "\r\n") before calling this
 // method.
-func (f *Fpdf) MultiCell(w, h float64, txtStr, borderStr, alignStr string, fill bool) {
+func (f *Fpdf) MultiCell(w, h float64, txtStr, borderStr, alignStr string, fill bool) (err error) {
 	if f.err != nil {
-		return
+		return f.err
 	}
 	// dbg("MultiCell")
 	if alignStr == "" {
@@ -2711,7 +2772,7 @@ func (f *Fpdf) MultiCell(w, h float64, txtStr, borderStr, alignStr string, fill 
 		}
 		if int(c) >= len(cw) {
 			f.err = fmt.Errorf("character outside the supported range: %s", string(c))
-			return
+			return f.err
 		}
 		if cw[int(c)] == 0 { //Marker width 0 used for missing symbols
 			l += f.currentFont.Desc.MissingWidth
@@ -2777,11 +2838,19 @@ func (f *Fpdf) MultiCell(w, h float64, txtStr, borderStr, alignStr string, fill 
 				alignStr = ""
 			}
 		}
-		f.CellFormat(w, h, string(srune[j:i]), b, 2, alignStr, fill, 0, "")
+		err = f.CellFormat(w, h, string(srune[j:i]), b, 2, alignStr, fill, 0, "")
+		if err != nil {
+			return
+		}
 	} else {
-		f.CellFormat(w, h, s[j:i], b, 2, alignStr, fill, 0, "")
+		err = f.CellFormat(w, h, s[j:i], b, 2, alignStr, fill, 0, "")
+		if err != nil {
+			return
+		}
 	}
 	f.x = f.lMargin
+
+	return
 }
 
 // write outputs text in flowing mode
@@ -3005,7 +3074,7 @@ func (f *Fpdf) ImageTypeFromMime(mimeStr string) (tp string) {
 	return
 }
 
-func (f *Fpdf) imageOut(info *ImageInfoType, x, y, w, h float64, allowNegativeX, flow bool, link int, linkStr string) {
+func (f *Fpdf) imageOut(info *ImageInfoType, x, y, w, h float64, allowNegativeX, flow bool, link int, linkStr string) (err error) {
 	// Automatic width and height calculation if needed
 	if w == 0 && h == 0 {
 		// Put image at 96 dpi
@@ -3041,7 +3110,7 @@ func (f *Fpdf) imageOut(info *ImageInfoType, x, y, w, h float64, allowNegativeX,
 			x2 := f.x
 			f.AddPageFormat(f.curOrientation, f.curPageSize)
 			if f.err != nil {
-				return
+				return f.err
 			}
 			f.x = x2
 		}
@@ -3059,6 +3128,8 @@ func (f *Fpdf) imageOut(info *ImageInfoType, x, y, w, h float64, allowNegativeX,
 	if link > 0 || len(linkStr) > 0 {
 		f.newLink(x, y, w, h, link, linkStr)
 	}
+
+	return
 }
 
 // Image puts a JPEG, PNG or GIF image in the current page.
@@ -3109,15 +3180,16 @@ func (f *Fpdf) Image(imageNameStr string, x, y, w, h float64, flow bool, tp stri
 // If link refers to an internal page anchor (that is, it is non-zero; see
 // AddLink()), the image will be a clickable internal link. Otherwise, if
 // linkStr specifies a URL, the image will be a clickable external link.
-func (f *Fpdf) ImageOptions(imageNameStr string, x, y, w, h float64, flow bool, options ImageOptions, link int, linkStr string) {
+func (f *Fpdf) ImageOptions(imageNameStr string, x, y, w, h float64, flow bool, options ImageOptions, link int, linkStr string) (err error) {
 	if f.err != nil {
-		return
+		return f.err
 	}
-	info := f.RegisterImageOptions(imageNameStr, options)
-	if f.err != nil {
-		return
+	info, err := f.RegisterImageOptions(imageNameStr, options)
+	if err != nil {
+		f.err = err
+		return err
 	}
-	f.imageOut(info, x, y, w, h, options.AllowNegativePosition, flow, link, linkStr)
+	err = f.imageOut(info, x, y, w, h, options.AllowNegativePosition, flow, link, linkStr)
 	return
 }
 
@@ -3125,7 +3197,7 @@ func (f *Fpdf) ImageOptions(imageNameStr string, x, y, w, h float64, flow bool, 
 // to the PDF file but not adding it to the page.
 //
 // This function is now deprecated in favor of RegisterImageOptionsReader
-func (f *Fpdf) RegisterImageReader(imgName, tp string, r io.Reader) (info *ImageInfoType) {
+func (f *Fpdf) RegisterImageReader(imgName, tp string, r io.Reader) (info *ImageInfoType, err error) {
 	options := ImageOptions{
 		ReadDpi:   false,
 		ImageType: tp,
@@ -3160,9 +3232,10 @@ type ImageOptions struct {
 // case.
 //
 // See Image() for restrictions on the image and the options parameters.
-func (f *Fpdf) RegisterImageOptionsReader(imgName string, options ImageOptions, r io.Reader) (info *ImageInfoType) {
+func (f *Fpdf) RegisterImageOptionsReader(imgName string, options ImageOptions, r io.Reader) (info *ImageInfoType, err error) {
 	// Thanks, Ivan Daniluk, for generalizing this code to use the Reader interface.
-	if f.err != nil {
+	err = f.err
+	if err != nil {
 		return
 	}
 	info, ok := f.images[imgName]
@@ -3172,7 +3245,8 @@ func (f *Fpdf) RegisterImageOptionsReader(imgName string, options ImageOptions, 
 
 	// First use of this image, get info
 	if options.ImageType == "" {
-		f.err = fmt.Errorf("image type should be specified if reading from custom reader")
+		err = fmt.Errorf("image type should be specified if reading from custom reader")
+		f.err = err
 		return
 	}
 	options.ImageType = strings.ToLower(options.ImageType)
@@ -3187,13 +3261,13 @@ func (f *Fpdf) RegisterImageOptionsReader(imgName string, options ImageOptions, 
 	case "gif":
 		info = f.parsegif(r)
 	default:
-		f.err = fmt.Errorf("unsupported image type: %s", options.ImageType)
-	}
-	if f.err != nil {
+		err = fmt.Errorf("unsupported image type: %s", options.ImageType)
+		f.err = err
 		return
 	}
 
-	if info.i, f.err = generateImageID(info); f.err != nil {
+	if info.i, err = generateImageID(info); err != nil {
+		f.err = err
 		return
 	}
 	f.images[imgName] = info
@@ -3208,7 +3282,7 @@ func (f *Fpdf) RegisterImageOptionsReader(imgName string, options ImageOptions, 
 //
 // This function is now deprecated in favor of RegisterImageOptions.
 // See Image() for restrictions on the image and the "tp" parameters.
-func (f *Fpdf) RegisterImage(fileStr, tp string) (info *ImageInfoType) {
+func (f *Fpdf) RegisterImage(fileStr, tp string) (info *ImageInfoType, err error) {
 	options := ImageOptions{
 		ReadDpi:   false,
 		ImageType: tp,
@@ -3221,7 +3295,7 @@ func (f *Fpdf) RegisterImage(fileStr, tp string) (info *ImageInfoType) {
 // to the page. Note that Image() calls this function, so this function is only
 // necessary if you need information about the image before placing it. See
 // Image() for restrictions on the image and the "tp" parameters.
-func (f *Fpdf) RegisterImageOptions(fileStr string, options ImageOptions) (info *ImageInfoType) {
+func (f *Fpdf) RegisterImageOptions(fileStr string, options ImageOptions) (info *ImageInfoType, err error) {
 	info, ok := f.images[fileStr]
 	if ok {
 		return
@@ -3238,13 +3312,16 @@ func (f *Fpdf) RegisterImageOptions(fileStr string, options ImageOptions) (info 
 	if options.ImageType == "" {
 		pos := strings.LastIndex(fileStr, ".")
 		if pos < 0 {
-			f.err = fmt.Errorf("image file has no extension and no type was specified: %s", fileStr)
+			err = fmt.Errorf("image file has no extension and no type was specified: %s", fileStr)
+			f.err = err
 			return
 		}
 		options.ImageType = fileStr[pos+1:]
 	}
 
-	return f.RegisterImageOptionsReader(fileStr, options, file)
+	info, err = f.RegisterImageOptionsReader(fileStr, options, file)
+
+	return
 }
 
 // GetImageInfo returns information about the registered image specified by
@@ -3396,6 +3473,23 @@ func (f *Fpdf) SetHomeXY() {
 	f.SetX(f.lMargin)
 }
 
+// SetHomeX is a convenience method that sets the current position to the left
+// margin.
+func (f *Fpdf) SetHomeX() {
+	f.SetX(f.lMargin)
+}
+
+// NextLine is a convenience method that sets the current position to the left
+// margin and next line. The height parameter specifies the height of the new line.
+// If the height parameter is below fontsize, then the height is set to 120% fontsize.
+func (f *Fpdf) NextLine(height float64) {
+	f.SetX(f.lMargin)
+	if height < f.fontSize {
+		height = f.fontSize * 1.2
+	}
+	f.SetY(f.GetY() + height)
+}
+
 // SetXY defines the abscissa and ordinate of the current position. If the
 // passed values are negative, they are relative respectively to the right and
 // bottom of the page.
@@ -3423,19 +3517,19 @@ func (f *Fpdf) SetXY(x, y float64) {
 // string for this argument will be replaced with a random value, effectively
 // prohibiting full access to the document.
 func (f *Fpdf) SetProtection(actionFlag byte, userPassStr, ownerPassStr string) {
-	if f.err != nil {
-		return
-	}
 	f.protect.setProtection(actionFlag, userPassStr, ownerPassStr)
 }
 
 // OutputAndClose sends the PDF document to the writer specified by w. This
 // method will close both f and w, even if an error is detected and no document
 // is produced.
-func (f *Fpdf) OutputAndClose(w io.WriteCloser) error {
-	f.Output(w)
-	w.Close()
-	return f.err
+func (f *Fpdf) OutputAndClose(w io.WriteCloser) (err error) {
+	err = f.Output(w)
+	if err != nil {
+		return
+	}
+	err = w.Close()
+	return err
 }
 
 // OutputFileAndClose creates or truncates the file specified by fileStr and
@@ -3443,42 +3537,36 @@ func (f *Fpdf) OutputAndClose(w io.WriteCloser) error {
 // written file, even if an error is detected and no document is produced.
 //
 // Most examples demonstrate the use of this method.
-func (f *Fpdf) OutputFileAndClose(fileStr string) error {
-	if f.err == nil {
-		pdfFile, err := os.Create(fileStr)
-		if err == nil {
-			f.Output(pdfFile)
-			pdfFile.Close()
-		} else {
-			f.err = err
-		}
+func (f *Fpdf) OutputFileAndClose(fileStr string) (err error) {
+
+	pdfFile, err := os.Create(fileStr)
+	if err == nil {
+		f.Output(pdfFile)
+		pdfFile.Close()
+	} else {
+		f.err = err
 	}
-	return f.err
+
+	return
 }
 
 // Output sends the PDF document to the writer specified by w. No output will
 // take place if an error has occurred in the document generation process. w
 // remains open after this function returns. After returning, f is in a closed
 // state and its methods should not be called.
-func (f *Fpdf) Output(w io.Writer) error {
-	if f.err != nil {
-		return f.err
-	}
+func (f *Fpdf) Output(w io.Writer) (err error) {
 	// dbg("Output")
 	if f.state < 3 {
 		f.Close()
 	}
-	_, err := f.buffer.WriteTo(w)
+	_, err = f.buffer.WriteTo(w)
 	if err != nil {
 		f.err = err
 	}
-	return f.err
+	return err
 }
 
-func (f *Fpdf) getpagesizestr(sizeStr string) (size SizeType) {
-	if f.err != nil {
-		return
-	}
+func (f *Fpdf) getpagesizestr(sizeStr string) (size SizeType, err error) {
 	sizeStr = strings.ToLower(sizeStr)
 	// dbg("Size [%s]", sizeStr)
 	var ok bool
@@ -3489,13 +3577,13 @@ func (f *Fpdf) getpagesizestr(sizeStr string) (size SizeType) {
 		size.Ht /= f.k
 
 	} else {
-		f.err = fmt.Errorf("unknown page size %s", sizeStr)
+		err = fmt.Errorf("unknown page size %s", sizeStr)
 	}
 	return
 }
 
 // GetPageSizeStr returns the SizeType for the given sizeStr (that is A4, A3, etc..)
-func (f *Fpdf) GetPageSizeStr(sizeStr string) (size SizeType) {
+func (f *Fpdf) GetPageSizeStr(sizeStr string) (size SizeType, err error) {
 	return f.getpagesizestr(sizeStr)
 }
 
@@ -3507,9 +3595,7 @@ func (f *Fpdf) _getpagesize(size SizeType) SizeType {
 }
 
 func (f *Fpdf) beginpage(orientationStr string, size SizeType) {
-	if f.err != nil {
-		return
-	}
+
 	f.page++
 	// add the default page boxes, if any exist, to the page
 	f.pageBoxes[f.page] = make(map[string]PageBox)
@@ -3543,6 +3629,7 @@ func (f *Fpdf) beginpage(orientationStr string, size SizeType) {
 		f.pageBreakTrigger = f.h - f.bMargin
 		f.curOrientation = orientationStr
 		f.curPageSize = size
+		f.updateWorkingSize()
 	}
 	if orientationStr != f.defOrientation || size.Wd != f.defPageSize.Wd || size.Ht != f.defPageSize.Ht {
 		f.pageSizes[f.page] = SizeType{f.wPt, f.hPt}

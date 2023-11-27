@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 Kurt Jung (Gmail: kurt.w.jung)
+ * Copyright (c) 2023-2025 Olivier Ruelle (github.com/oruelle)
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,18 +14,14 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-package example_test
+package gofpdf
 
-import (
-	"errors"
+type Position struct {
+	X float64
+	Y float64
+}
 
-	"github.com/oruelle/gofpdf/internal/example"
-)
-
-// ExampleFilename tests the Filename() and Summary() functions.
-func ExampleFilename() {
-	fileStr := example.Filename("example")
-	example.Summary(errors.New("printer on fire"), fileStr)
-	// Output:
-	// printer on fire
+func NewPos(x, y float64) *Position {
+	p := &Position{X: x, Y: y}
+	return p
 }

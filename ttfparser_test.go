@@ -19,6 +19,7 @@ package gofpdf_test
 import (
 	"bytes"
 	"fmt"
+	"testing"
 
 	"github.com/oruelle/gofpdf"
 	"github.com/oruelle/gofpdf/internal/example"
@@ -55,8 +56,11 @@ func hexStr(s string) string {
 	return b.String()
 }
 
-func ExampleFpdf_GetStringWidth() {
-	pdf := gofpdf.New("", "", "", example.FontDir())
+func TestExampleFpdf_GetStringWidth(t *testing.T) {
+	pdf, err := gofpdf.New("", "", "", example.FontDir())
+	if err != nil {
+		t.Fatalf("Error %v", err)
+	}
 	pdf.SetFont("Helvetica", "", 12)
 	pdf.AddPage()
 	for _, s := range []string{"Hello", "世界", "\xe7a va?"} {
@@ -66,7 +70,10 @@ func ExampleFpdf_GetStringWidth() {
 			fmt.Println(pdf.Error())
 		}
 	}
-	pdf.Close()
+	err = pdf.Close()
+	if err != nil {
+		t.Fatalf("Error %v", err)
+	}
 	// Output:
 	// "\x48\x65\x6c\x6c\x6f":          width  9.64, bytes  5, runes  5
 	// "\xe4\xb8\x96\xe7\x95\x8c":      width 13.95, bytes  6, runes  2

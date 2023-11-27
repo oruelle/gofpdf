@@ -12,7 +12,7 @@ import (
 // vertical placement purposes.
 func (f *Fpdf) SplitText(txt string, w float64) (lines []string) {
 	cw := f.currentFont.Cw
-	wmax := int(math.Ceil((w - 2*f.cMargin) * 1000 / f.fontSize))
+	wmax := int(math.Ceil((w) * 1000 / f.fontSize))
 	s := []rune(txt) // Return slice of UTF-8 runes
 	nb := len(s)
 	for nb > 0 && s[nb-1] == '\n' {

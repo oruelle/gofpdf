@@ -30,6 +30,15 @@ support for text, drawing and images.
   - Charting facility
   - Import PDFs as templates
 
+Fork changes : 
+  - Change the behavior of error management :
+    - Most of the functions now return an error in order to better manage
+      the build problems and not have the error only at the document building
+  - Add real justified text rendering
+  - fix split text function
+  - Add simplifed functions to build a document with title, paragraph or table functions
+    (see docbuild_test.go and rendered example in pdf/Fpdf_DocBuildSimply.pdf)
+
 gofpdf has no dependencies other than the Go standard library. All tests
 pass on Linux, Mac and Windows platforms.
 

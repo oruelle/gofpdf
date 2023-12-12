@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/oruelle/gofpdf"
-	"github.com/oruelle/gofpdf/internal/example"
+	"github.com/oruelle/gofpdf/v3"
+	"github.com/oruelle/gofpdf/v3/internal/example"
 )
 
 func ExampleTtfParse() {

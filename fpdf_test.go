@@ -32,9 +32,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oruelle/gofpdf"
-	"github.com/oruelle/gofpdf/internal/example"
-	"github.com/oruelle/gofpdf/internal/files"
+	"github.com/oruelle/gofpdf/v3"
+	"github.com/oruelle/gofpdf/v3/internal/example"
+	"github.com/oruelle/gofpdf/v3/internal/files"
 )
 
 func init() {

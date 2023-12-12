@@ -19,7 +19,7 @@ package example_test
 import (
 	"errors"
 
-	"github.com/oruelle/gofpdf/internal/example"
+	"github.com/oruelle/gofpdf/v3/internal/example"
 )
 
 // ExampleFilename tests the Filename() and Summary() functions.

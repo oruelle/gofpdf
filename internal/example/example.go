@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oruelle/gofpdf"
+	"github.com/oruelle/gofpdf/v3"
 )
 
 var gofpdfDir string

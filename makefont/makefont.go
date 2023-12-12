@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/oruelle/gofpdf"
+	"github.com/oruelle/gofpdf/v3"
 )
 
 func errPrintf(fmtStr string, args ...interface{}) {
